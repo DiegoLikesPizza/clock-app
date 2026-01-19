@@ -1,13 +1,29 @@
 "use client";
 
-import { useAtomicTime } from "@/hooks/useAtomicTime";
+import { useEffect, useState, useRef } from "react";
 
 interface AnalogClockProps {
   color?: string;
 }
 
 export default function AnalogClock({ color = "#ffffff" }: AnalogClockProps) {
-  const { time } = useAtomicTime();
+  const [time, setTime] = useState(() => new Date());
+  const requestRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const updateTime = () => {
+      setTime(new Date());
+      requestRef.current = requestAnimationFrame(updateTime);
+    };
+
+    requestRef.current = requestAnimationFrame(updateTime);
+
+    return () => {
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
+  }, []);
 
   const seconds = time.getSeconds();
   const minutes = time.getMinutes();
@@ -56,10 +72,10 @@ export default function AnalogClock({ color = "#ffffff" }: AnalogClockProps) {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center gap-6">
-      {/* Digital time display */}
+    <div className="flex flex-col items-center justify-center gap-4 md:gap-6 p-4">
+      {/* Digital time display - smaller on mobile */}
       <div
-        className="text-6xl font-medium"
+        className="text-4xl md:text-6xl font-medium"
         style={{
           color: color,
           fontFamily: "var(--font-jetbrains-mono), monospace",
@@ -68,7 +84,11 @@ export default function AnalogClock({ color = "#ffffff" }: AnalogClockProps) {
         {timeString}
       </div>
 
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* SVG clock - responsive sizing */}
+      <svg
+        className="w-[320px] h-[320px] md:w-[500px] md:h-[500px]"
+        viewBox={`0 0 ${size} ${size}`}
+      >
         {/* Outer circle */}
         <circle
           cx={center}

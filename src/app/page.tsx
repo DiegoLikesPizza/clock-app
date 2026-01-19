@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import RollingClock from "@/components/RollingClock";
 import AnalogClock from "@/components/AnalogClock";
 import ColorPicker from "@/components/ColorPicker";
@@ -22,10 +22,23 @@ export default function Home() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isAnalog, setIsAnalog] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPiP, setIsPiP] = useState(false);
   const [isBgSelectorOpen, setIsBgSelectorOpen] = useState(false);
   const [textColor, setTextColor] = useState("#ffffff");
   const [selectedGradient, setSelectedGradient] = useState<string | null>(null);
   const [selectedBgImage, setSelectedBgImage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Prevent hydration mismatch by only rendering time after mount
+  useEffect(() => {
+    setMounted(true);
+    // Check if mobile
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const colors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
   const bgColor = isDarkMode ? "#000000" : "#ffffff";
@@ -55,6 +68,8 @@ export default function Home() {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+
+
   const handleModeToggle = () => {
     setIsDarkMode(!isDarkMode);
     // Reset text color to default for the new mode
@@ -66,6 +81,220 @@ export default function Home() {
       await document.documentElement.requestFullscreen();
     } else {
       await document.exitFullscreen();
+    }
+  };
+
+  const pipWindowRef = useRef<Window | null>(null);
+  const pipIntervalRef = useRef<number | null>(null);
+
+  const togglePiP = async () => {
+    try {
+      // Check if Document PiP is supported
+      if (!('documentPictureInPicture' in window)) {
+        console.error('Document Picture-in-Picture not supported');
+        return;
+      }
+
+      // Close existing PiP window
+      if (pipWindowRef.current && !pipWindowRef.current.closed) {
+        pipWindowRef.current.close();
+        pipWindowRef.current = null;
+        setIsPiP(false);
+        if (pipIntervalRef.current) {
+          clearInterval(pipIntervalRef.current);
+          pipIntervalRef.current = null;
+        }
+        return;
+      }
+
+      // Request Document PiP window
+      const pipWindow = await (window as unknown as { documentPictureInPicture: { requestWindow: (options: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture.requestWindow({
+        width: 300,
+        height: 350,
+      });
+
+      pipWindowRef.current = pipWindow;
+      setIsPiP(true);
+
+      // Style the PiP document
+      const pipDocument = pipWindow.document;
+      pipDocument.body.style.margin = '0';
+      pipDocument.body.style.padding = '0';
+      pipDocument.body.style.overflow = 'hidden';
+      pipDocument.body.style.backgroundColor = isDarkMode ? '#000000' : '#ffffff';
+      pipDocument.body.style.display = 'flex';
+      pipDocument.body.style.alignItems = 'center';
+      pipDocument.body.style.justifyContent = 'center';
+      pipDocument.body.style.width = '100vw';
+      pipDocument.body.style.height = '100vh';
+
+      // Create canvas in PiP window
+      const canvas = pipDocument.createElement('canvas');
+      pipDocument.body.appendChild(canvas);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Resize canvas to fit window
+      const resizeCanvas = () => {
+        const winWidth = pipWindow.innerWidth;
+        const winHeight = pipWindow.innerHeight;
+        canvas.width = winWidth;
+        canvas.height = winHeight;
+        canvas.style.width = winWidth + 'px';
+        canvas.style.height = winHeight + 'px';
+      };
+
+      resizeCanvas();
+      pipWindow.addEventListener('resize', resizeCanvas);
+
+      // Draw analog clock with digital time above
+      const drawClock = () => {
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Calculate scale based on window size
+        const baseSize = 350;
+        const scale = Math.min(width, height) / baseSize;
+
+        // Clear canvas
+        ctx.fillStyle = isDarkMode ? '#000000' : '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        const now = new Date();
+        const seconds = now.getSeconds();
+        const minutes = now.getMinutes();
+        const hours = now.getHours();
+        const hours12 = hours % 12;
+
+        // Center point
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        // Digital time at top
+        const timeStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        ctx.font = `bold ${Math.round(32 * scale)}px monospace`;
+        ctx.fillStyle = textColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(timeStr, centerX, centerY - 130 * scale);
+
+        // Analog clock settings
+        const clockCenterX = centerX;
+        const clockCenterY = centerY + 25 * scale;
+        const clockRadius = 120 * scale;
+
+        // Draw clock face circle
+        ctx.beginPath();
+        ctx.arc(clockCenterX, clockCenterY, clockRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 3 * scale;
+        ctx.stroke();
+
+        // Draw tick marks
+        for (let i = 0; i < 60; i++) {
+          const angle = (i * 6 - 90) * (Math.PI / 180);
+          const isMajor = i % 5 === 0;
+          const outerRadius = clockRadius - 5 * scale;
+          const innerRadius = isMajor ? clockRadius - 20 * scale : clockRadius - 12 * scale;
+
+          const x1 = clockCenterX + outerRadius * Math.cos(angle);
+          const y1 = clockCenterY + outerRadius * Math.sin(angle);
+          const x2 = clockCenterX + innerRadius * Math.cos(angle);
+          const y2 = clockCenterY + innerRadius * Math.sin(angle);
+
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.strokeStyle = textColor;
+          ctx.lineWidth = (isMajor ? 3 : 1) * scale;
+          ctx.globalAlpha = isMajor ? 1 : 0.5;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+
+        // Calculate hand angles
+        const secondAngle = (seconds * 6 - 90) * (Math.PI / 180);
+        const minuteAngle = ((minutes * 6 + seconds * 0.1) - 90) * (Math.PI / 180);
+        const hourAngle = ((hours12 * 30 + minutes * 0.5) - 90) * (Math.PI / 180);
+
+        // Draw hour hand
+        ctx.beginPath();
+        ctx.moveTo(clockCenterX, clockCenterY);
+        ctx.lineTo(
+          clockCenterX + 55 * scale * Math.cos(hourAngle),
+          clockCenterY + 55 * scale * Math.sin(hourAngle)
+        );
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 6 * scale;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Draw minute hand
+        ctx.beginPath();
+        ctx.moveTo(clockCenterX, clockCenterY);
+        ctx.lineTo(
+          clockCenterX + 80 * scale * Math.cos(minuteAngle),
+          clockCenterY + 80 * scale * Math.sin(minuteAngle)
+        );
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 4 * scale;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Draw second hand
+        ctx.beginPath();
+        ctx.moveTo(
+          clockCenterX - 15 * scale * Math.cos(secondAngle),
+          clockCenterY - 15 * scale * Math.sin(secondAngle)
+        );
+        ctx.lineTo(
+          clockCenterX + 90 * scale * Math.cos(secondAngle),
+          clockCenterY + 90 * scale * Math.sin(secondAngle)
+        );
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth = 2 * scale;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Draw center dot
+        ctx.beginPath();
+        ctx.arc(clockCenterX, clockCenterY, 6 * scale, 0, Math.PI * 2);
+        ctx.fillStyle = textColor;
+        ctx.fill();
+      };
+
+      // Draw first frame
+      drawClock();
+
+      // Start update interval
+      if (pipIntervalRef.current) {
+        clearInterval(pipIntervalRef.current);
+      }
+      pipIntervalRef.current = window.setInterval(() => {
+        if (pipWindowRef.current && !pipWindowRef.current.closed) {
+          drawClock();
+        } else {
+          if (pipIntervalRef.current) {
+            clearInterval(pipIntervalRef.current);
+            pipIntervalRef.current = null;
+          }
+          setIsPiP(false);
+        }
+      }, 100);
+
+      // Handle window close
+      pipWindow.addEventListener('pagehide', () => {
+        setIsPiP(false);
+        if (pipIntervalRef.current) {
+          clearInterval(pipIntervalRef.current);
+          pipIntervalRef.current = null;
+        }
+        pipWindowRef.current = null;
+      });
+
+    } catch (error) {
+      console.error('PiP error:', error);
     }
   };
 
@@ -88,10 +317,10 @@ export default function Home() {
       className="fixed inset-0 transition-all duration-500"
       style={getBackgroundStyle()}
     >
-      {/* Overlay for background image - darkens/lightens the right side */}
-      {selectedBgImage && (
+      {/* Overlay for background image - darkens/lightens the right side - hidden on mobile */}
+      {selectedBgImage && !isMobile && (
         <div
-          className="absolute inset-0 transition-all duration-500"
+          className="hidden md:block absolute inset-0 transition-all duration-500"
           style={{
             background: isDarkMode
               ? `linear-gradient(to right, transparent 0%, transparent ${isBgSelectorOpen ? "30%" : "0%"}, rgba(0,0,0,0.7) ${isBgSelectorOpen ? "60%" : "30%"}, rgba(0,0,0,0.85) 100%)`
@@ -100,34 +329,39 @@ export default function Home() {
         />
       )}
 
-      {/* Clock container - shifts right when sidebar is open */}
+      {/* Clock container - shifts right when sidebar is open (desktop only) */}
       <div
-        className="absolute inset-0 flex items-center justify-center transition-all duration-500"
+        className="pip-capture absolute inset-0 flex items-center justify-center transition-all duration-500"
         style={{
-          transform: isBgSelectorOpen ? "translateX(200px)" : "translateX(0)",
+          transform: isMobile ? "translateX(0)" : (isBgSelectorOpen ? "translateX(200px)" : "translateX(0)"),
         }}
+        suppressHydrationWarning
       >
-        {isAnalog ? (
-          <AnalogClock color={textColor} />
-        ) : (
-          <RollingClock textColor={textColor} />
+        {mounted && (
+          (isAnalog || isMobile) ? (
+            <AnalogClock color={textColor} />
+          ) : (
+            <RollingClock textColor={textColor} />
+          )
         )}
       </div>
 
-      {/* Background Selector Sidebar */}
-      <BackgroundSelector
-        isOpen={isBgSelectorOpen}
-        onClose={() => setIsBgSelectorOpen(false)}
-        selectedImage={selectedBgImage}
-        onImageSelect={handleImageSelect}
-        textColor={textColor}
-        isDarkMode={isDarkMode}
-      />
+      {/* Background Selector Sidebar - hidden on mobile */}
+      <div className="hidden md:block">
+        <BackgroundSelector
+          isOpen={isBgSelectorOpen}
+          onClose={() => setIsBgSelectorOpen(false)}
+          selectedImage={selectedBgImage}
+          onImageSelect={handleImageSelect}
+          textColor={textColor}
+          isDarkMode={isDarkMode}
+        />
+      </div>
 
-      {/* Dark/Light mode toggle - top right */}
+      {/* Dark/Light mode toggle - top right - hidden on mobile */}
       <button
         onClick={handleModeToggle}
-        className="fixed top-8 right-8 flex items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
+        className="hidden md:flex fixed top-8 right-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
         style={{
           borderColor: textColor,
           color: textColor,
@@ -150,10 +384,10 @@ export default function Home() {
         </div>
       </button>
 
-      {/* Analog/Digital toggle - top left */}
+      {/* Analog/Digital toggle - top left - hidden on mobile */}
       <button
         onClick={() => setIsAnalog(!isAnalog)}
-        className="fixed top-8 left-8 flex items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
+        className="hidden md:flex fixed top-8 left-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
         style={{
           borderColor: textColor,
           color: textColor,
@@ -199,9 +433,9 @@ export default function Home() {
         </span>
       </button>
 
-      {/* Gradient picker on the left - hidden when sidebar is open */}
+      {/* Gradient picker on the left - hidden when sidebar is open - hidden on mobile */}
       <div
-        className="fixed left-8 top-1/2 -translate-y-1/2 transition-all duration-500"
+        className="hidden md:block fixed left-8 top-1/2 -translate-y-1/2 transition-all duration-500"
         style={{
           opacity: isBgSelectorOpen ? 0 : 1,
           pointerEvents: isBgSelectorOpen ? "none" : "auto",
@@ -215,10 +449,10 @@ export default function Home() {
         />
       </div>
 
-      {/* Background image expand button - bottom left */}
+      {/* Background image expand button - bottom left - hidden on mobile */}
       <button
         onClick={() => setIsBgSelectorOpen(!isBgSelectorOpen)}
-        className="fixed bottom-8 left-8 flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-300 hover:scale-105 z-50"
+        className="hidden md:flex fixed bottom-8 left-8 items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-300 hover:scale-105 z-50"
         style={{
           borderColor: textColor,
           color: textColor,
@@ -238,8 +472,8 @@ export default function Home() {
         </span>
       </button>
 
-      {/* Color picker on the right */}
-      <div className="fixed right-8 top-1/2 -translate-y-1/2">
+      {/* Color picker on the right - hidden on mobile */}
+      <div className="hidden md:block fixed right-8 top-1/2 -translate-y-1/2">
         <ColorPicker
           colors={colors}
           selectedColor={textColor}
@@ -248,34 +482,64 @@ export default function Home() {
         />
       </div>
 
-      {/* Fullscreen toggle - bottom right */}
-      <button
-        onClick={toggleFullscreen}
-        className="fixed bottom-8 right-8 p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
-        style={{
-          borderColor: textColor,
-          color: textColor,
-        }}
-        title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-      >
-        {isFullscreen ? (
-          // Exit fullscreen icon
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-            <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-            <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-            <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-          </svg>
-        ) : (
-          // Enter fullscreen icon
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-            <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-            <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-            <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-          </svg>
-        )}
-      </button>
+      {/* Bottom right controls - PiP and Fullscreen - hidden on mobile */}
+      <div className="hidden md:flex fixed bottom-8 right-8 gap-3">
+        {/* Picture-in-Picture toggle */}
+        <button
+          onClick={togglePiP}
+          className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
+          style={{
+            borderColor: textColor,
+            color: textColor,
+          }}
+          title={isPiP ? "Exit Picture-in-Picture" : "Enter Picture-in-Picture"}
+        >
+          {isPiP ? (
+            // Exit PiP icon
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <rect x="10" y="9" width="8" height="6" rx="1" fill="currentColor" />
+              <line x1="15" y1="11" x2="17" y2="13" />
+              <line x1="17" y1="11" x2="15" y2="13" />
+            </svg>
+          ) : (
+            // Enter PiP icon
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <rect x="10" y="9" width="8" height="6" rx="1" />
+            </svg>
+          )}
+        </button>
+
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
+          style={{
+            borderColor: textColor,
+            color: textColor,
+          }}
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+          {isFullscreen ? (
+            // Exit fullscreen icon
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+              <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+              <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+              <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+          ) : (
+            // Enter fullscreen icon
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

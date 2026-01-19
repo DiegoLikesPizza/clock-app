@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from "react";
 import RollingDigit from "./RollingDigit";
-import { useAtomicTime } from "@/hooks/useAtomicTime";
 
 interface TimeDigits {
   h1: number; // Hour tens (0-2)
@@ -33,21 +32,33 @@ interface RollingClockProps {
 }
 
 export default function RollingClock({ textColor = "#ffffff" }: RollingClockProps) {
-  const { time } = useAtomicTime();
   const [timeDigits, setTimeDigits] = useState<TimeDigits>(() =>
     getTimeDigits(new Date())
   );
   const previousTimeRef = useRef<string>("");
+  const requestRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const timeString = time.toLocaleTimeString("en-US", { hour12: false });
+    const updateTime = () => {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString("en-US", { hour12: false });
 
-    // Only update if time has changed (to avoid unnecessary re-renders)
-    if (timeString !== previousTimeRef.current) {
-      previousTimeRef.current = timeString;
-      setTimeDigits(getTimeDigits(time));
-    }
-  }, [time]);
+      // Only update if time has changed (to avoid unnecessary re-renders)
+      if (timeString !== previousTimeRef.current) {
+        previousTimeRef.current = timeString;
+        setTimeDigits(getTimeDigits(now));
+      }
+      requestRef.current = requestAnimationFrame(updateTime);
+    };
+
+    requestRef.current = requestAnimationFrame(updateTime);
+
+    return () => {
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex items-center justify-center">

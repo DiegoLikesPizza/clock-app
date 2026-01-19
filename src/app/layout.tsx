@@ -8,7 +8,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rolling Clock",
+  title: "Clock",
   description: "A vertical rolling digit clock",
 };
 
