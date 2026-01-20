@@ -24,6 +24,7 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPiP, setIsPiP] = useState(false);
   const [isBgSelectorOpen, setIsBgSelectorOpen] = useState(false);
+  const [areControlsHidden, setAreControlsHidden] = useState(false);
   const [textColor, setTextColor] = useState("#ffffff");
   const [selectedGradient, setSelectedGradient] = useState<string | null>(null);
   const [selectedBgImage, setSelectedBgImage] = useState<string | null>(null);
@@ -323,17 +324,17 @@ export default function Home() {
           className="hidden md:block absolute inset-0 transition-all duration-500"
           style={{
             background: isDarkMode
-              ? `linear-gradient(to right, transparent 0%, transparent ${isBgSelectorOpen ? "30%" : "0%"}, rgba(0,0,0,0.7) ${isBgSelectorOpen ? "60%" : "30%"}, rgba(0,0,0,0.85) 100%)`
-              : `linear-gradient(to right, transparent 0%, transparent ${isBgSelectorOpen ? "30%" : "0%"}, rgba(255,255,255,0.7) ${isBgSelectorOpen ? "60%" : "30%"}, rgba(255,255,255,0.85) 100%)`,
+              ? `linear-gradient(to right, transparent 0%, transparent ${(isBgSelectorOpen || isAnalog) ? "25%" : "0%"}, rgba(0,0,0,0.7) ${(isBgSelectorOpen || isAnalog) ? "50%" : "30%"}, rgba(0,0,0,0.85) 100%)`
+              : `linear-gradient(to right, transparent 0%, transparent ${(isBgSelectorOpen || isAnalog) ? "25%" : "0%"}, rgba(255,255,255,0.7) ${(isBgSelectorOpen || isAnalog) ? "50%" : "30%"}, rgba(255,255,255,0.85) 100%)`,
           }}
         />
       )}
 
-      {/* Clock container - shifts right when sidebar is open (desktop only) */}
+      {/* Clock container - shifts right when sidebar is open or analog clock with bg image (desktop only) */}
       <div
         className="pip-capture absolute inset-0 flex items-center justify-center transition-all duration-500"
         style={{
-          transform: isMobile ? "translateX(0)" : (isBgSelectorOpen ? "translateX(200px)" : "translateX(0)"),
+          transform: isMobile ? "translateX(0)" : ((isBgSelectorOpen || (isAnalog && selectedBgImage)) ? "translateX(350px)" : "translateX(0)"),
         }}
         suppressHydrationWarning
       >
@@ -361,10 +362,13 @@ export default function Home() {
       {/* Dark/Light mode toggle - top right - hidden on mobile */}
       <button
         onClick={handleModeToggle}
-        className="hidden md:flex fixed top-8 right-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
+        className="hidden md:flex fixed top-8 right-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-500 hover:scale-105"
         style={{
           borderColor: textColor,
           color: textColor,
+          transform: areControlsHidden ? "translateX(200px)" : "translateX(0)",
+          opacity: areControlsHidden ? 0 : 1,
+          pointerEvents: areControlsHidden ? "none" : "auto",
         }}
       >
         <span className="text-sm font-medium" style={{ fontFamily: "var(--font-jetbrains-mono), monospace" }}>
@@ -387,10 +391,13 @@ export default function Home() {
       {/* Analog/Digital toggle - top left - hidden on mobile */}
       <button
         onClick={() => setIsAnalog(!isAnalog)}
-        className="hidden md:flex fixed top-8 left-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-300 hover:scale-105"
+        className="hidden md:flex fixed top-8 left-8 items-center gap-3 px-4 py-2 rounded-full border-2 transition-all duration-500 hover:scale-105"
         style={{
           borderColor: textColor,
           color: textColor,
+          transform: areControlsHidden ? "translateX(-200px)" : "translateX(0)",
+          opacity: areControlsHidden ? 0 : 1,
+          pointerEvents: areControlsHidden ? "none" : "auto",
         }}
       >
         {/* Mini clock icon */}
@@ -435,10 +442,11 @@ export default function Home() {
 
       {/* Gradient picker on the left - hidden when sidebar is open - hidden on mobile */}
       <div
-        className="hidden md:block fixed left-8 top-1/2 -translate-y-1/2 transition-all duration-500"
+        className="hidden md:block fixed left-8 top-1/2 transition-all duration-500"
         style={{
-          opacity: isBgSelectorOpen ? 0 : 1,
-          pointerEvents: isBgSelectorOpen ? "none" : "auto",
+          opacity: (isBgSelectorOpen || areControlsHidden) ? 0 : 1,
+          pointerEvents: (isBgSelectorOpen || areControlsHidden) ? "none" : "auto",
+          transform: `translateY(-50%) ${areControlsHidden ? "translateX(-100px)" : ""}`,
         }}
       >
         <GradientPicker
@@ -452,11 +460,14 @@ export default function Home() {
       {/* Background image expand button - bottom left - hidden on mobile */}
       <button
         onClick={() => setIsBgSelectorOpen(!isBgSelectorOpen)}
-        className="hidden md:flex fixed bottom-8 left-8 items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-300 hover:scale-105 z-50"
+        className="hidden md:flex fixed bottom-8 left-8 items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-500 hover:scale-105 z-50"
         style={{
           borderColor: textColor,
           color: textColor,
           backgroundColor: isBgSelectorOpen ? (isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)") : "transparent",
+          transform: areControlsHidden ? "translateX(-200px)" : "translateX(0)",
+          opacity: areControlsHidden ? 0 : 1,
+          pointerEvents: areControlsHidden ? "none" : "auto",
         }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -473,7 +484,14 @@ export default function Home() {
       </button>
 
       {/* Color picker on the right - hidden on mobile */}
-      <div className="hidden md:block fixed right-8 top-1/2 -translate-y-1/2">
+      <div
+        className="hidden md:block fixed right-8 top-1/2 transition-all duration-500"
+        style={{
+          opacity: areControlsHidden ? 0 : 1,
+          pointerEvents: areControlsHidden ? "none" : "auto",
+          transform: `translateY(-50%) ${areControlsHidden ? "translateX(100px)" : ""}`,
+        }}
+      >
         <ColorPicker
           colors={colors}
           selectedColor={textColor}
@@ -484,6 +502,32 @@ export default function Home() {
 
       {/* Bottom right controls - PiP and Fullscreen - hidden on mobile */}
       <div className="hidden md:flex fixed bottom-8 right-8 gap-3">
+        {/* Hide controls toggle */}
+        <button
+          onClick={() => setAreControlsHidden(!areControlsHidden)}
+          className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
+          style={{
+            borderColor: textColor,
+            color: textColor,
+            backgroundColor: areControlsHidden ? (isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)") : "transparent",
+          }}
+          title={areControlsHidden ? "Show Controls" : "Hide Controls"}
+        >
+          {areControlsHidden ? (
+            // Show controls icon (eye open)
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          ) : (
+            // Hide controls icon (eye with slash)
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+              <line x1="1" y1="1" x2="23" y2="23" />
+            </svg>
+          )}
+        </button>
+
         {/* Picture-in-Picture toggle */}
         <button
           onClick={togglePiP}
