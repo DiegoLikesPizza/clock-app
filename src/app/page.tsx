@@ -636,7 +636,7 @@ export default function Home() {
         {/* Picture-in-Picture toggle */}
         <button
           onClick={togglePiP}
-          className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
+          className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110 flex items-center justify-center"
           style={{
             borderColor: textColor,
             color: textColor,
@@ -646,16 +646,16 @@ export default function Home() {
           {isPiP ? (
             // Exit PiP icon
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <rect x="10" y="9" width="8" height="6" rx="1" fill="currentColor" />
-              <line x1="15" y1="11" x2="17" y2="13" />
-              <line x1="17" y1="11" x2="15" y2="13" />
+              <rect x="2" y="5" width="20" height="14" rx="2" ry="2" />
+              <rect x="10" y="10" width="8" height="6" rx="1" fill="currentColor" />
+              <line x1="15" y1="12" x2="17" y2="14" />
+              <line x1="17" y1="12" x2="15" y2="14" />
             </svg>
           ) : (
             // Enter PiP icon
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-              <rect x="10" y="9" width="8" height="6" rx="1" />
+              <rect x="2" y="5" width="20" height="14" rx="2" ry="2" />
+              <rect x="10" y="10" width="8" height="6" rx="1" />
             </svg>
           )}
         </button>
