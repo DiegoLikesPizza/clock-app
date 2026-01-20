@@ -24,7 +24,9 @@ export default function Home() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPiP, setIsPiP] = useState(false);
   const [isBgSelectorOpen, setIsBgSelectorOpen] = useState(false);
+  const [areLeftControlsHiding, setAreLeftControlsHiding] = useState(false);
   const [areControlsHidden, setAreControlsHidden] = useState(false);
+  const [clockPosition, setClockPosition] = useState<'center' | 'left' | 'right'>('center');
   const [textColor, setTextColor] = useState("#ffffff");
   const [selectedGradient, setSelectedGradient] = useState<string | null>(null);
   const [selectedBgImage, setSelectedBgImage] = useState<string | null>(null);
@@ -318,23 +320,72 @@ export default function Home() {
       className="fixed inset-0 transition-all duration-500"
       style={getBackgroundStyle()}
     >
-      {/* Overlay for background image - darkens/lightens the right side - hidden on mobile */}
-      {selectedBgImage && !isMobile && (
-        <div
-          className="hidden md:block absolute inset-0 transition-all duration-500"
-          style={{
-            background: isDarkMode
-              ? `linear-gradient(to right, transparent 0%, transparent ${(isBgSelectorOpen || isAnalog) ? "25%" : "0%"}, rgba(0,0,0,0.7) ${(isBgSelectorOpen || isAnalog) ? "50%" : "30%"}, rgba(0,0,0,0.85) 100%)`
-              : `linear-gradient(to right, transparent 0%, transparent ${(isBgSelectorOpen || isAnalog) ? "25%" : "0%"}, rgba(255,255,255,0.7) ${(isBgSelectorOpen || isAnalog) ? "50%" : "30%"}, rgba(255,255,255,0.85) 100%)`,
-          }}
-        />
+      {/* Overlays for background image - sliding transitions */}
+      {!isMobile && (
+        <>
+          {/* Center overlay - full dim (for digital clock or analog clock in center) */}
+          <div
+            className="hidden md:block absolute inset-0 transition-all duration-500"
+            style={{
+              background: isDarkMode ? "rgba(0,0,0,0.75)" : "rgba(255,255,255,0.75)",
+              opacity: selectedBgImage && (!isAnalog || (clockPosition === 'center' && !isBgSelectorOpen)) ? 1 : 0,
+              pointerEvents: "none",
+            }}
+          />
+          {/* Right overlay - dim right side, slides in from right (only for analog) */}
+          <div
+            className="hidden md:block absolute inset-0 transition-all duration-500"
+            style={{
+              background: isDarkMode
+                ? `linear-gradient(to right, transparent 0%, transparent 25%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.85) 100%)`
+                : `linear-gradient(to right, transparent 0%, transparent 25%, rgba(255,255,255,0.7) 50%, rgba(255,255,255,0.85) 100%)`,
+              transform: (() => {
+                if (selectedBgImage && isAnalog && (clockPosition === 'right' || isBgSelectorOpen)) {
+                  const hiddenOffset = areControlsHidden && !isBgSelectorOpen ? 250 : 0;
+                  return `translateX(${hiddenOffset}px)`;
+                }
+                return 'translateX(100%)';
+              })(),
+              pointerEvents: "none",
+            }}
+          />
+          {/* Left overlay - dim left side, slides in from left (only for analog) */}
+          <div
+            className="hidden md:block absolute inset-0 transition-all duration-500"
+            style={{
+              background: isDarkMode
+                ? `linear-gradient(to left, transparent 0%, transparent 25%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.85) 100%)`
+                : `linear-gradient(to left, transparent 0%, transparent 25%, rgba(255,255,255,0.7) 50%, rgba(255,255,255,0.85) 100%)`,
+              transform: (() => {
+                if (selectedBgImage && isAnalog && clockPosition === 'left' && !isBgSelectorOpen) {
+                  const hiddenOffset = areControlsHidden ? -250 : 0;
+                  return `translateX(${hiddenOffset}px)`;
+                }
+                return 'translateX(-100%)';
+              })(),
+              pointerEvents: "none",
+            }}
+          />
+        </>
       )}
 
-      {/* Clock container - shifts right when sidebar is open or analog clock with bg image (desktop only) */}
+      {/* Clock container - position based on clockPosition and sidebar state (desktop only) */}
       <div
         className="pip-capture absolute inset-0 flex items-center justify-center transition-all duration-500"
         style={{
-          transform: isMobile ? "translateX(0)" : ((isBgSelectorOpen || (isAnalog && selectedBgImage)) ? "translateX(350px)" : "translateX(0)"),
+          transform: (() => {
+            if (isMobile) return "translateX(0)";
+            if (isBgSelectorOpen) return "translateX(350px)";
+            // Digital clock is always centered
+            if (!isAnalog) return "translateX(0)";
+            // Analog clock respects clockPosition
+            if (selectedBgImage || isAnalog) {
+              const baseOffset = clockPosition === 'right' ? 350 : clockPosition === 'left' ? -350 : 0;
+              const hiddenOffset = areControlsHidden ? (clockPosition === 'right' ? 200 : clockPosition === 'left' ? -200 : 0) : 0;
+              return `translateX(${baseOffset + hiddenOffset}px)`;
+            }
+            return "translateX(0)";
+          })(),
         }}
         suppressHydrationWarning
       >
@@ -395,9 +446,9 @@ export default function Home() {
         style={{
           borderColor: textColor,
           color: textColor,
-          transform: areControlsHidden ? "translateX(-200px)" : "translateX(0)",
-          opacity: areControlsHidden ? 0 : 1,
-          pointerEvents: areControlsHidden ? "none" : "auto",
+          transform: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? "translateX(-200px)" : "translateX(0)",
+          opacity: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? 0 : 1,
+          pointerEvents: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? "none" : "auto",
         }}
       >
         {/* Mini clock icon */}
@@ -444,9 +495,9 @@ export default function Home() {
       <div
         className="hidden md:block fixed left-8 top-1/2 transition-all duration-500"
         style={{
-          opacity: (isBgSelectorOpen || areControlsHidden) ? 0 : 1,
-          pointerEvents: (isBgSelectorOpen || areControlsHidden) ? "none" : "auto",
-          transform: `translateY(-50%) ${areControlsHidden ? "translateX(-100px)" : ""}`,
+          opacity: (isBgSelectorOpen || areControlsHidden || areLeftControlsHiding) ? 0 : 1,
+          pointerEvents: (isBgSelectorOpen || areControlsHidden || areLeftControlsHiding) ? "none" : "auto",
+          transform: `translateY(-50%) ${(areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? "translateX(-100px)" : ""}`,
         }}
       >
         <GradientPicker
@@ -459,15 +510,27 @@ export default function Home() {
 
       {/* Background image expand button - bottom left - hidden on mobile */}
       <button
-        onClick={() => setIsBgSelectorOpen(!isBgSelectorOpen)}
+        onClick={() => {
+          if (!isBgSelectorOpen) {
+            // Opening: first hide left controls, then open selector after delay
+            setAreLeftControlsHiding(true);
+            // When opening with analog clock not on right, move to right
+            if (isAnalog && clockPosition !== 'right') {
+              setClockPosition('right');
+            }
+            setTimeout(() => {
+              setIsBgSelectorOpen(true);
+              setAreLeftControlsHiding(false);
+            }, 500);
+          }
+        }}
         className="hidden md:flex fixed bottom-8 left-8 items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all duration-500 hover:scale-105 z-50"
         style={{
           borderColor: textColor,
           color: textColor,
-          backgroundColor: isBgSelectorOpen ? (isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)") : "transparent",
-          transform: areControlsHidden ? "translateX(-200px)" : "translateX(0)",
-          opacity: areControlsHidden ? 0 : 1,
-          pointerEvents: areControlsHidden ? "none" : "auto",
+          transform: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? "translateX(-200px)" : "translateX(0)",
+          opacity: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? 0 : 1,
+          pointerEvents: (areControlsHidden || areLeftControlsHiding || isBgSelectorOpen) ? "none" : "auto",
         }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -479,7 +542,7 @@ export default function Home() {
           className="text-sm font-medium"
           style={{ fontFamily: "var(--font-jetbrains-mono), monospace" }}
         >
-          {isBgSelectorOpen ? "CLOSE" : "BACKGROUND"}
+          BACKGROUND
         </span>
       </button>
 
@@ -502,6 +565,48 @@ export default function Home() {
 
       {/* Bottom right controls - PiP and Fullscreen - hidden on mobile */}
       <div className="hidden md:flex fixed bottom-8 right-8 gap-3">
+        {/* Clock position toggle - only shown for analog clock */}
+        {isAnalog && (
+          <button
+            onClick={() => {
+              const positions: ('left' | 'center' | 'right')[] = ['left', 'center', 'right'];
+              const currentIndex = positions.indexOf(clockPosition);
+              const nextIndex = (currentIndex + 1) % positions.length;
+              setClockPosition(positions[nextIndex]);
+              // Close background selector when changing position
+              if (isBgSelectorOpen) {
+                setIsBgSelectorOpen(false);
+              }
+            }}
+            className="p-3 rounded-xl border-2 transition-all duration-300 hover:scale-110"
+            style={{
+              borderColor: textColor,
+              color: textColor,
+            }}
+            title={`Clock Position: ${clockPosition.toUpperCase()}`}
+          >
+            {clockPosition === 'left' ? (
+              // Clock left icon
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8" cy="12" r="3" />
+              </svg>
+            ) : clockPosition === 'center' ? (
+              // Clock center icon
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            ) : (
+              // Clock right icon
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="16" cy="12" r="3" />
+            </svg>
+            )}
+          </button>
+        )}
+
         {/* Hide controls toggle */}
         <button
           onClick={() => setAreControlsHidden(!areControlsHidden)}
