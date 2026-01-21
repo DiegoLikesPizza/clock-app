@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import RollingClock from "@/components/RollingClock";
 import AnalogClock from "@/components/AnalogClock";
 import ColorPicker from "@/components/ColorPicker";
@@ -18,6 +18,23 @@ const GRADIENTS = [
   { id: "aurora", gradient: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)", colors: ["#0f0c29", "#302b63", "#24243e"] },
 ];
 
+// Bell schedule timestamps (hours, minutes)
+const BELL_SCHEDULE = [
+  { h: 8, m: 40 },
+  { h: 9, m: 25 },
+  { h: 9, m: 40 },
+  { h: 10, m: 25 },
+  { h: 11, m: 10 },
+  { h: 11, m: 25 },
+  { h: 12, m: 10 },
+  { h: 12, m: 55 },
+  { h: 13, m: 40 },
+  { h: 14, m: 25 },
+  { h: 15, m: 10 },
+  { h: 15, m: 55 },
+  { h: 16, m: 40 },
+];
+
 export default function Home() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isAnalog, setIsAnalog] = useState(false);
@@ -33,6 +50,55 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
+  // Secret menu state
+  const [isSecretMenuOpen, setIsSecretMenuOpen] = useState(false);
+  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
+  const [countdownEnabled, setCountdownEnabled] = useState(false);
+  const [countdown, setCountdown] = useState<string>("");
+  const [snowEnabled, setSnowEnabled] = useState(false);
+  const [starsEnabled, setStarsEnabled] = useState(false);
+  const [worldEnabled, setWorldEnabled] = useState(false);
+  const [dateEnabled, setDateEnabled] = useState(false);
+  const [quoteEnabled, setQuoteEnabled] = useState(false);
+  const [spinEnabled, setSpinEnabled] = useState(false);
+  const [currentQuote, setCurrentQuote] = useState("");
+  const lastKeyPressRef = useRef<{ key: string; time: number } | null>(null);
+  const secretInputRef = useRef<HTMLInputElement>(null);
+
+  // Secret codes list for help menu
+  const SECRET_CODES = [
+    { code: "BELL", description: "Countdown bis zur nächsten Pause" },
+    { code: "SNOW", description: "Schneefall-Animation" },
+    { code: "STARS", description: "Funkelnde Sterne" },
+    { code: "WORLD", description: "Weltuhren (NY, London, Tokyo)" },
+    { code: "DATE", description: "Datum anzeigen" },
+    { code: "QUOTE", description: "Motivationszitat" },
+    { code: "SPIN", description: "Uhr dreht sich" },
+    { code: "RESET", description: "Alles zurücksetzen" },
+  ];
+
+  // Motivational quotes
+  const QUOTES = [
+    "The only way to do great work is to love what you do.",
+    "Stay hungry, stay foolish.",
+    "Time is what we want most, but what we use worst.",
+    "The future depends on what you do today.",
+    "Every moment is a fresh beginning.",
+    "Don't watch the clock; do what it does. Keep going.",
+    "Lost time is never found again.",
+    "The best time to plant a tree was 20 years ago. The second best time is now.",
+    "Time flies over us, but leaves its shadow behind.",
+    "Better three hours too soon than a minute too late.",
+  ];
+
+  // World clock timezones
+  const TIMEZONES = [
+    { city: "New York", zone: "America/New_York" },
+    { city: "London", zone: "Europe/London" },
+    { city: "Tokyo", zone: "Asia/Tokyo" },
+  ];
+
   // Prevent hydration mismatch by only rendering time after mount
   useEffect(() => {
     setMounted(true);
@@ -42,6 +108,152 @@ export default function Home() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Secret key listener (Shift+K twice quickly for input, Shift+H twice for help, Escape to close)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape closes help menu
+      if (e.key === 'Escape' && isHelpMenuOpen) {
+        setIsHelpMenuOpen(false);
+        return;
+      }
+
+      // Don't trigger if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      const now = Date.now();
+
+      if (e.shiftKey && e.key === 'K') {
+        if (lastKeyPressRef.current?.key === 'K' && now - lastKeyPressRef.current.time < 500) {
+          e.preventDefault();
+          setIsSecretMenuOpen(prev => !prev);
+          setIsHelpMenuOpen(false);
+          setSecretInput("");
+          lastKeyPressRef.current = null;
+        } else {
+          lastKeyPressRef.current = { key: 'K', time: now };
+        }
+      } else if (e.shiftKey && e.key === 'H') {
+        if (lastKeyPressRef.current?.key === 'H' && now - lastKeyPressRef.current.time < 500) {
+          e.preventDefault();
+          setIsHelpMenuOpen(prev => !prev);
+          setIsSecretMenuOpen(false);
+          lastKeyPressRef.current = null;
+        } else {
+          lastKeyPressRef.current = { key: 'H', time: now };
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHelpMenuOpen]);
+
+  // Focus secret input when menu opens
+  useEffect(() => {
+    if (isSecretMenuOpen && secretInputRef.current) {
+      setTimeout(() => {
+        secretInputRef.current?.focus();
+      }, 10);
+    }
+  }, [isSecretMenuOpen]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!countdownEnabled) return;
+
+    const updateCountdown = () => {
+      const now = new Date();
+      const currentTotalSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+
+      // Find next bell time
+      let nextBell: { h: number; m: number } | null = null;
+      for (const bell of BELL_SCHEDULE) {
+        const bellTotalSeconds = bell.h * 3600 + bell.m * 60;
+        if (bellTotalSeconds > currentTotalSeconds) {
+          nextBell = bell;
+          break;
+        }
+      }
+
+      let diff: number;
+      if (!nextBell) {
+        // No more bells today, show first bell of tomorrow
+        nextBell = BELL_SCHEDULE[0];
+        const targetTime = new Date(now);
+        targetTime.setDate(targetTime.getDate() + 1);
+        targetTime.setHours(nextBell.h, nextBell.m, 0, 0);
+        diff = targetTime.getTime() - now.getTime();
+      } else {
+        const targetTime = new Date(now);
+        targetTime.setHours(nextBell.h, nextBell.m, 0, 0);
+        diff = targetTime.getTime() - now.getTime();
+      }
+
+      // Ensure diff is never negative
+      if (diff < 0) diff = 0;
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      if (hours > 0) {
+        setCountdown(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      } else {
+        setCountdown(`${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
+      }
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [countdownEnabled]);
+
+  // Handle secret input submission
+  const handleSecretSubmit = useCallback(() => {
+    const input = secretInput.trim().toUpperCase();
+    const codes = input.split("&");
+
+    codes.forEach(code => {
+      switch (code) {
+        case "RESET":
+          setCountdownEnabled(false);
+          setCountdown("");
+          setSnowEnabled(false);
+          setStarsEnabled(false);
+          setWorldEnabled(false);
+          setDateEnabled(false);
+          setQuoteEnabled(false);
+          setCurrentQuote("");
+          setSpinEnabled(false);
+          break;
+        case "BELL":
+          setCountdownEnabled(true);
+          break;
+        case "SNOW":
+          setSnowEnabled(prev => !prev);
+          break;
+        case "STARS":
+          setStarsEnabled(prev => !prev);
+          break;
+        case "WORLD":
+          setWorldEnabled(prev => !prev);
+          break;
+        case "DATE":
+          setDateEnabled(prev => !prev);
+          break;
+        case "QUOTE":
+          setQuoteEnabled(prev => !prev);
+          setCurrentQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+          break;
+        case "SPIN":
+          setSpinEnabled(prev => !prev);
+          break;
+      }
+    });
+
+    setSecretInput("");
+    setIsSecretMenuOpen(false);
+  }, [secretInput, QUOTES]);
 
   const colors = isDarkMode ? DARK_COLORS : LIGHT_COLORS;
   const bgColor = isDarkMode ? "#000000" : "#ffffff";
@@ -320,6 +532,79 @@ export default function Home() {
       className="fixed inset-0 transition-all duration-500"
       style={getBackgroundStyle()}
     >
+      {/* Snow Animation */}
+      {snowEnabled && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full bg-white"
+              style={{
+                width: Math.random() * 8 + 4 + 'px',
+                height: Math.random() * 8 + 4 + 'px',
+                left: Math.random() * 100 + '%',
+                top: -20,
+                opacity: Math.random() * 0.7 + 0.3,
+                animation: `snowfall ${Math.random() * 5 + 5}s linear infinite`,
+                animationDelay: `${Math.random() * 5}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Stars Animation */}
+      {starsEnabled && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
+          {[...Array(100)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                width: Math.random() * 3 + 1 + 'px',
+                height: Math.random() * 3 + 1 + 'px',
+                left: Math.random() * 100 + '%',
+                top: Math.random() * 100 + '%',
+                backgroundColor: isDarkMode ? '#fff' : '#000',
+                opacity: Math.random() * 0.8 + 0.2,
+                animation: `twinkle ${Math.random() * 3 + 2}s ease-in-out infinite`,
+                animationDelay: `${Math.random() * 3}s`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes snowfall {
+          0% {
+            transform: translateY(-20px) rotate(0deg);
+          }
+          100% {
+            transform: translateY(100vh) rotate(360deg);
+          }
+        }
+        @keyframes twinkle {
+          0%, 100% {
+            opacity: 0.2;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1.5);
+          }
+        }
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
+
       {/* Overlays for background image - sliding transitions */}
       {!isMobile && (
         <>
@@ -390,13 +675,170 @@ export default function Home() {
         suppressHydrationWarning
       >
         {mounted && (
-          (isAnalog || isMobile) ? (
-            <AnalogClock color={textColor} />
-          ) : (
-            <RollingClock textColor={textColor} />
-          )
+          <div className="flex flex-col items-center" style={{
+            animation: spinEnabled ? "spin 60s linear infinite" : "none",
+          }}>
+            {/* Countdown display above the clock */}
+            {countdownEnabled && (isAnalog || isMobile) && (
+              <div
+                className="mb-4 text-2xl font-mono tracking-wider"
+                style={{
+                  color: textColor,
+                  fontFamily: "var(--font-jetbrains-mono), monospace",
+                  opacity: 0.8,
+                }}
+              >
+                {countdown}
+              </div>
+            )}
+            {(isAnalog || isMobile) ? (
+              <AnalogClock color={textColor} />
+            ) : (
+              <RollingClock textColor={textColor} />
+            )}
+            {/* Date display */}
+            {dateEnabled && (
+              <div
+                className="mt-4 text-xl font-mono tracking-wider"
+                style={{
+                  color: textColor,
+                  fontFamily: "var(--font-jetbrains-mono), monospace",
+                  opacity: 0.7,
+                }}
+              >
+                {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </div>
+            )}
+            {/* Quote display */}
+            {quoteEnabled && currentQuote && (
+              <div
+                className="mt-6 text-center max-w-md px-4"
+                style={{
+                  color: textColor,
+                  fontFamily: "var(--font-jetbrains-mono), monospace",
+                  opacity: 0.6,
+                  fontSize: "0.9rem",
+                  fontStyle: "italic",
+                }}
+              >
+                "{currentQuote}"
+              </div>
+            )}
+          </div>
         )}
       </div>
+
+      {/* World Clock */}
+      {worldEnabled && mounted && (
+        <div
+          className="fixed bottom-8 left-1/2 transform -translate-x-1/2 flex gap-8 z-40"
+          style={{
+            fontFamily: "var(--font-jetbrains-mono), monospace",
+          }}
+        >
+          {TIMEZONES.map((tz) => (
+            <div key={tz.zone} className="text-center" style={{ color: textColor, opacity: 0.7 }}>
+              <div className="text-xs uppercase tracking-wider mb-1">{tz.city}</div>
+              <div className="text-lg">
+                {new Date().toLocaleTimeString('de-DE', { timeZone: tz.zone, hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Secret Menu Overlay */}
+      {isSecretMenuOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.8)" }}
+          onClick={() => setIsSecretMenuOpen(false)}
+        >
+          <div
+            className="p-6 rounded-xl border-2"
+            style={{
+              backgroundColor: isDarkMode ? "rgba(0,0,0,0.9)" : "rgba(255,255,255,0.9)",
+              borderColor: textColor,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              ref={secretInputRef}
+              type="text"
+              value={secretInput}
+              onChange={(e) => setSecretInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSecretSubmit();
+                if (e.key === "Escape") setIsSecretMenuOpen(false);
+              }}
+              className="w-48 px-4 py-2 rounded-lg border-2 bg-transparent outline-none text-center text-lg tracking-widest"
+              style={{
+                borderColor: textColor,
+                color: textColor,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+              }}
+              placeholder="•••••"
+              maxLength={50}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Help Menu Overlay */}
+      {isHelpMenuOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.8)" }}
+          onClick={() => setIsHelpMenuOpen(false)}
+        >
+          <div
+            className="p-6 rounded-xl border-2 max-w-md"
+            style={{
+              backgroundColor: isDarkMode ? "rgba(0,0,0,0.9)" : "rgba(255,255,255,0.9)",
+              borderColor: textColor,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              className="text-lg font-bold mb-4 text-center"
+              style={{
+                color: textColor,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+              }}
+            >
+              Secret Codes
+            </h3>
+            <div className="space-y-2">
+              {SECRET_CODES.map((item) => (
+                <div
+                  key={item.code}
+                  className="flex justify-between gap-4 py-1 border-b"
+                  style={{
+                    borderColor: `${textColor}20`,
+                    fontFamily: "var(--font-jetbrains-mono), monospace",
+                  }}
+                >
+                  <span style={{ color: textColor, fontWeight: "bold" }}>{item.code}</span>
+                  <span style={{ color: textColor, opacity: 0.7, fontSize: "0.85rem" }}>{item.description}</span>
+                </div>
+              ))}
+            </div>
+            <div
+              className="mt-4 pt-3 border-t text-center text-xs"
+              style={{
+                borderColor: `${textColor}20`,
+                color: textColor,
+                opacity: 0.5,
+                fontFamily: "var(--font-jetbrains-mono), monospace",
+              }}
+            >
+              Kombiniere mit & (z.B. SNOW&DATE)
+              <br />
+              <span className="mt-1 block">Shift+K → Code eingeben | Shift+H → Hilfe</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Background Selector Sidebar - hidden on mobile */}
       <div className="hidden md:block">
